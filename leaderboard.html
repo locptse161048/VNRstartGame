@@ -34,6 +34,8 @@
   button:hover,a.btn:hover{background:var(--red);transform:translateY(-1px);}
   button.ghost{background:transparent;border-color:rgba(255,255,255,.25);color:var(--mut);}
   button.ghost:hover{background:rgba(255,255,255,.06);color:#fff;}
+  button.danger{background:transparent;border-color:#e0503066;color:#ff8a72;}
+  button.danger:hover{background:#7a1c12;border-color:#e05030;color:#fff;}
   @media (max-width:520px){ h1{font-size:23px;} th,td{padding:9px 7px;font-size:14px;} }
 </style>
 </head>
@@ -45,7 +47,7 @@
   <div id="content"></div>
   <div class="bar">
     <button id="refresh">⟳ Làm mới</button>
-    <a class="btn" href="index.html">▶ Vào game</a>
+    <button id="reset" class="danger">🗑 Reset bảng</button>
   </div>
 </div>
 
@@ -99,7 +101,25 @@ async function refresh(){
   }
 }
 
+async function resetBoard(){
+  if(!confirm('Xoá TOÀN BỘ bảng xếp hạng?\nHành động này KHÔNG THỂ hoàn tác.')) return;
+  const st=document.getElementById('status');
+  try{
+    if(LB_IS_LOCAL){
+      localStorage.removeItem(LB_LOCAL_KEY);
+    } else {
+      const r = await fetch(LB_API, { method:'DELETE' });
+      if(!r.ok) throw new Error('HTTP '+r.status+' (máy chủ có thể chưa hỗ trợ xoá)');
+    }
+    st.textContent = 'Đã reset bảng xếp hạng lúc ' + new Date().toLocaleTimeString('vi-VN');
+    refresh();
+  }catch(e){
+    st.textContent = 'Không reset được: ' + e.message;
+  }
+}
+
 document.getElementById('refresh').addEventListener('click', refresh);
+document.getElementById('reset').addEventListener('click', resetBoard);
 refresh();
 setInterval(refresh, AUTO_REFRESH_MS);
 </script>

@@ -29,7 +29,6 @@
 </head>
 <body>
 <div id="wrap"><canvas id="game" width="600" height="800"></canvas></div>
-<div id="hint">Máy tính: ← → di chuyển · Space / chạm: hành động &nbsp;|&nbsp; Điện thoại: kéo để di chuyển, chạm để bắn nhịp</div>
 <div id="nameForm">
   <div class="nfTitle">Nhập tên để lưu vào bảng xếp hạng</div>
   <input id="nfInput" maxlength="16" placeholder="Tên của bạn" autocomplete="off" spellcheck="false">
@@ -132,6 +131,8 @@ function wrapText(text, x, y, maxW, lh){
 /* ---------- Input ---------- */
 const keys = {};
 let pointer = {x:W/2, y:H/2, down:false, justTapped:false, active:false};
+// Joystick ảo (điện thoại) — neo nổi tại điểm chạm, kéo để điều khiển hướng
+const joy = { active:false, ox:0, oy:0, kx:0, ky:0, R:70 };
 addEventListener('keydown', e=>{
   keys[e.code]=true;
   if(['Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
@@ -146,9 +147,12 @@ function ptFromEvent(e){
   return { x:(t.clientX-r.left)/r.width*W, y:(t.clientY-r.top)/r.height*H };
 }
 function onDown(e){ const p=ptFromEvent(e); if(!p)return; pointer.x=p.x;pointer.y=p.y;
-  pointer.down=true;pointer.active=true;pointer.justTapped=true; game.onAction(); e.preventDefault(); }
-function onMove(e){ const p=ptFromEvent(e); if(!p)return; pointer.x=p.x;pointer.y=p.y; e.preventDefault(); }
-function onUp(e){ pointer.down=false; e.preventDefault(); }
+  pointer.down=true;pointer.active=true;pointer.justTapped=true;
+  joy.active=true; joy.ox=p.x; joy.oy=p.y; joy.kx=p.x; joy.ky=p.y;   // neo joystick tại điểm chạm
+  game.onAction(); e.preventDefault(); }
+function onMove(e){ const p=ptFromEvent(e); if(!p)return; pointer.x=p.x;pointer.y=p.y;
+  if(joy.active){ joy.kx=p.x; joy.ky=p.y; } e.preventDefault(); }
+function onUp(e){ pointer.down=false; joy.active=false; e.preventDefault(); }
 cv.addEventListener('mousedown',onDown); cv.addEventListener('mousemove',onMove);
 addEventListener('mouseup',onUp);
 cv.addEventListener('touchstart',onDown,{passive:false});
@@ -186,7 +190,9 @@ const LB = {
 };
 
 /* ---------- Form nhập tên ở màn Kết quả (HTML overlay) ---------- */
+let lbSaved = null;   // {name, score} sau khi lưu thành công → hiện thông báo ở màn kết quả
 function showNameForm(score, rank){
+  lbSaved = null;
   const f=document.getElementById('nameForm'), inp=document.getElementById('nfInput'),
         btn=document.getElementById('nfBtn'), st=document.getElementById('nfStatus');
   f.style.display='flex'; inp.disabled=false; btn.disabled=false; st.textContent=''; inp.value='';
@@ -195,7 +201,9 @@ function showNameForm(score, rank){
     let name=(inp.value||'').trim(); if(!name) name='Ẩn danh'; name=name.slice(0,16);
     btn.disabled=true; inp.disabled=true; st.style.color='#cdd6e0'; st.textContent='Đang lưu...';
     try{ await LB.submit(name, score, rank);
-      st.style.color='#7CFC60'; st.textContent='✓ Đã lưu vào bảng xếp hạng!'; }
+      lbSaved = { name, score };   // ghi nhận để hiện thông báo ở màn kết quả
+      hideNameForm();              // đóng block nhập tên
+    }
     catch(e){ st.style.color='#ff7a6b'; st.textContent='✗ Lỗi lưu: '+e.message;
       btn.disabled=false; inp.disabled=false; }
   };
@@ -235,6 +243,18 @@ function hitButtons(){
     if(pointer.x>b.x&&pointer.x<b.x+b.w&&pointer.y>b.y&&pointer.y<b.y+b.h){ b.cb(); return true; }
   }
   return false;
+}
+// Bảng hướng dẫn chơi (hiện trước mỗi giai đoạn, cần bấm xác nhận mới chơi)
+function drawGuide(title, lines){
+  ctx.fillStyle='rgba(0,0,0,.7)'; rr(32,150,W-64,420,16); ctx.fill();
+  ctx.strokeStyle='#f0c040'; ctx.lineWidth=2; rr(32,150,W-64,420,16); ctx.stroke();
+  ctx.fillStyle='#f0c040'; ctx.font='bold 15px Segoe UI'; ctx.textAlign='center';
+  ctx.fillText('HƯỚNG DẪN CHƠI', W/2, 186);
+  ctx.fillStyle='#fff'; ctx.font='bold 20px Segoe UI';
+  ctx.fillText(title, W/2, 216);
+  ctx.fillStyle='#e8eef4'; ctx.font='17px Segoe UI'; ctx.textAlign='left';
+  let y=258;
+  for(const ln of lines){ y = wrapText('•  '+ln, 54, y, W-108, 25) + 26; }
 }
 
 /* ---------- Background helpers ---------- */
@@ -401,9 +421,9 @@ states.loading = {
 /* ----- INTRO ----- */
 states.intro = {
   enter(){ Score.reset(); game.lives=3; buttons=[];
-    addButton('▶  BẮT ĐẦU', W/2-110, H-130, 220, 60, ()=>game.set('p1')); },
-  action(){ if(!hitButtons()) game.set('p1'); },
-  confirm(){ game.set('p1'); },
+    addButton('▶  BẮT ĐẦU', W/2-110, H-130, 220, 60, ()=>game.set('g1guide')); },
+  action(){ if(!hitButtons()) game.set('g1guide'); },
+  confirm(){ game.set('g1guide'); },
   draw(){
     nightForestBg(); drawRain();
     drawSpr(IMG.p1_phao, W/2, 250, 0.7, false, .9);
@@ -418,6 +438,23 @@ states.intro = {
   }
 };
 
+/* ----- Hướng dẫn GĐ1 (trước khi chơi) ----- */
+states.g1guide = {
+  enter(){ buttons=[]; addButton('ĐÃ HIỂU — BẮT ĐẦU ▶', W/2-160,H-118,320,56, ()=>game.set('p1')); },
+  action(){ if(!hitButtons()) game.set('p1'); },
+  confirm(){ game.set('p1'); },
+  draw(){
+    nightForestBg(); drawRain();
+    drawGuide('GĐ1 — KÉO PHÁO QUA ĐÈO', [
+      'Mục tiêu: đưa khẩu pháo lên đỉnh dốc qua 5 lượt canh nhịp.',
+      'Bấm SPACE hoặc CHẠM màn hình khi vạch trắng chạy vào ô vàng "Hoàn hảo".',
+      'Ô vàng đổi vị trí và nhỏ dần mỗi lượt; combo càng cao vạch chạy càng nhanh.',
+      'Bấm hụt 2 lần là pháo tuột dốc'
+    ]);
+    drawButtons();
+  }
+};
+
 /* ===========================================================
    GIAI ĐOẠN 1 — TIMING KÉO PHÁO (Tô Vĩnh Diện)
    =========================================================== */
@@ -426,12 +463,13 @@ const P1 = {
   progress:0, successes:0, miss:0,
   marker:0, prevMarker:0, dir:1, speed:0.95,
   zonePos:0,                       // tâm ô "Hoàn hảo" (ngẫu nhiên mỗi lượt)
+  lastInZone:-99,                  // thời điểm gần nhất vạch nằm trong ô (cửa sổ ân hạn)
   perfectHalf:0.1,                 // nửa bề rộng ô vàng — nhỏ dần qua từng lượt
   shake:0, par:22, timeLeft:22, flash:0, flashCol:'#fff',
   feedback:'', feedbackT:0, warnT:0, done:false,
   reset(){
     this.attempt=1; this.progress=0; this.successes=0; this.miss=0;
-    this.marker=0; this.prevMarker=0; this.dir=1; this.shake=0; this.flash=0;
+    this.marker=0; this.prevMarker=0; this.dir=1; this.shake=0; this.flash=0; this.lastInZone=-99;
     this.feedback=''; this.feedbackT=0; this.warnT=0; this.done=false;
     this.par=22; this.timeLeft=22;
     this.setupAttempt(1);
@@ -451,12 +489,15 @@ states.p1 = {
   confirm(){ this.beat(); },
   beat(){
     if(P1.done) return;
-    // tính khoảng cách từ tâm ô vàng tới ĐOẠN vạch quét trong khung hình vừa rồi (prev→hiện tại)
-    // → nếu ô nằm trong đoạn quét thì coi như trúng, tránh báo hụt oan khi vạch chạy nhanh
-    const lo=Math.min(P1.prevMarker,P1.marker), hi=Math.max(P1.prevMarker,P1.marker);
+    // Khoảng cách từ tâm ô vàng tới ĐOẠN vạch quét khung vừa rồi, NỚI THÊM ~1 khung mỗi phía
+    // (dung sai không gian) + CỬA SỔ ÂN HẠN thời gian: nếu vạch vừa ở trong ô trong ~0.13s thì vẫn tính trúng.
+    const comboSpd = 1 + Math.min(Score.combo,12)*0.05;
+    const tol = P1.speed*comboSpd*0.05;                  // ~1 khung di chuyển
+    const lo=Math.min(P1.prevMarker,P1.marker)-tol, hi=Math.max(P1.prevMarker,P1.marker)+tol;
     const d = (P1.zonePos<lo)? lo-P1.zonePos : (P1.zonePos>hi? P1.zonePos-hi : 0);
+    const recently = (game.t - P1.lastInZone) <= 0.13;   // vừa ở trong ô gần đây
     let miss=false;
-    if(d <= P1.perfectHalf){ Score.combo++; const mul=Math.min(2,1+(Score.combo-1)*0.1);
+    if(d <= P1.perfectHalf || recently){ Score.combo++; const mul=Math.min(2,1+(Score.combo-1)*0.1);
       Score.add(50*mul); P1.successes++; P1.feedback='HOÀN HẢO!'; P1.feedbackT=0.6; P1.flash=0.25; P1.flashCol='#7CFC60'; }
     else { Score.combo=0; Score.add(-30); P1.miss++; miss=true;
       P1.feedback='Hụt!'; P1.feedbackT=0.5; P1.shake=10; P1.flash=0.25; P1.flashCol='#e05030'; }
@@ -477,6 +518,10 @@ states.p1 = {
     P1.prevMarker = P1.marker;                            // lưu vị trí khung trước để bắt cả đoạn quét
     P1.marker += P1.dir*P1.speed*comboSpd*dt;
     if(P1.marker>1){P1.marker=1;P1.dir=-1;} if(P1.marker<-1){P1.marker=-1;P1.dir=1;}
+    { // ghi nhận thời điểm vạch (đoạn quét) nằm trong ô vàng → phục vụ cửa sổ ân hạn
+      const lo=Math.min(P1.prevMarker,P1.marker), hi=Math.max(P1.prevMarker,P1.marker);
+      const dz=(P1.zonePos<lo)?lo-P1.zonePos:(P1.zonePos>hi?P1.zonePos-hi:0);
+      if(dz <= P1.perfectHalf) P1.lastInZone = game.t; }
     P1.timeLeft -= dt;
     if(P1.shake>0)P1.shake-=dt*40; if(P1.flash>0)P1.flash-=dt;
     if(P1.feedbackT>0)P1.feedbackT-=dt; if(P1.warnT>0)P1.warnT-=dt;
@@ -590,7 +635,7 @@ states.p1cut = {
       ctx.fillStyle='rgba(120,100,80,'+(0.3+0.3*Math.abs(Math.sin(tm*14)))+')';
       ctx.beginPath(); ctx.ellipse(rx-20, p1SurfaceY(rx)-4, 11, 4, 0,0,7); ctx.fill();
       ctx.fillStyle='#fff'; ctx.font='bold 23px Segoe UI'; ctx.textAlign='center';
-      ctx.fillText('Pháo tuột dốc — anh lao lên chèn!', W/2, 110);
+      ctx.fillText('Pháo tuột dốc', W/2, 110);
     } else {
       // lính ngã chảy máu nằm chặn dưới bánh pháo phía dưới dốc → pháo dừng lại (giữ ~1 giây)
       drawSpr(IMG.p1_nga, p.x-26, p1SurfaceY(p.x-26)-4, 0.62);
@@ -658,9 +703,12 @@ function p2MovePlayer(dt, freeY){
   if(keys['ArrowLeft']||keys['KeyA']) p.x-=sp;
   if(keys['ArrowRight']||keys['KeyD']) p.x+=sp;
   if(freeY){ if(keys['ArrowUp']||keys['KeyW']) p.y-=sp; if(keys['ArrowDown']||keys['KeyS']) p.y+=sp; }
-  if(pointer.down){ // theo ngón tay/chuột
-    p.x += clamp(pointer.x-p.x,-sp*1.6,sp*1.6);
-    if(freeY) p.y += clamp(pointer.y-p.y,-sp*1.6,sp*1.6);
+  if(freeY){
+    // JOYSTICK ảo: di chuyển theo HƯỚNG cần (mọi hướng) — dành cho điện thoại
+    if(joy.active){ let dx=joy.kx-joy.ox, dy=joy.ky-joy.oy; const m=Math.hypot(dx,dy);
+      if(m>6){ const cl=Math.min(m,joy.R)/joy.R; p.x += dx/m*cl*sp; p.y += dy/m*cl*sp; } }
+  } else if(pointer.down){
+    p.x += clamp(pointer.x-p.x,-sp*1.6,sp*1.6);   // GĐ2.1: kéo ngang như cũ
   }
   p.x=clamp(p.x,30,W-30);
   p.y=clamp(p.y, freeY?120:H-180, H-60);
@@ -694,6 +742,16 @@ function p2DrawAlly(){
   // dấu hiệu đồng minh (chevron xanh trên đầu)
   ctx.fillStyle='#36d1a0'; ctx.beginPath();
   ctx.moveTo(a.x,a.y-34); ctx.lineTo(a.x-6,a.y-26); ctx.lineTo(a.x+6,a.y-26); ctx.closePath(); ctx.fill();
+}
+function drawJoystick(){
+  if(!joy.active) return;
+  ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(joy.ox,joy.oy,joy.R,0,7); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.06)'; ctx.beginPath(); ctx.arc(joy.ox,joy.oy,joy.R,0,7); ctx.fill();
+  let dx=joy.kx-joy.ox, dy=joy.ky-joy.oy; const m=Math.hypot(dx,dy);
+  if(m>joy.R){ dx=dx/m*joy.R; dy=dy/m*joy.R; }
+  ctx.fillStyle='rgba(240,192,64,.85)'; ctx.beginPath(); ctx.arc(joy.ox+dx,joy.oy+dy,26,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.3)'; ctx.lineWidth=2; ctx.stroke();
 }
 function p2DrawBullets(){
   for(const b of P2.bullets) drawSpr(IMG.p2_danta, b.x, b.y, 0.8);
@@ -887,9 +945,9 @@ states.p2fall = {
 /* ----- Cut scene chuyển 2.1 → 2.2: nhảy khỏi chiến hào, hô "XUNG PHONG!" ----- */
 states.p2charge = {
   enter(){ this.timer=0; buttons=[]; P2.ebullets=[]; P2.enemies=[]; },
-  update(dt){ this.timer+=dt; if(this.timer>2.9) game.set('p2_2'); },   // chạy hết lên đỉnh thì vào 2.2
-  action(){ if(this.timer>2.4) game.set('p2_2'); },
-  confirm(){ game.set('p2_2'); },
+  update(dt){ this.timer+=dt; if(this.timer>2.9) game.set('g22guide'); },   // chạy hết lên đỉnh → hướng dẫn GĐ2.2
+  action(){ if(this.timer>2.4) game.set('g22guide'); },
+  confirm(){ game.set('g22guide'); },
   draw(){
     greyBattleBg(); drawBattlefieldDecor(); drawBarbedWire(160);
     // nền hào + tường bao cát
@@ -916,6 +974,23 @@ states.p2charge = {
     }
     if(tm>2.3){ ctx.fillStyle='#cdd6e0'; ctx.font='15px Segoe UI'; ctx.textAlign='center';
       ctx.fillText('Chạm / Space để tiếp tục', W/2, H-40); }
+  }
+};
+
+/* ----- Hướng dẫn GĐ2.2 (trước khi đánh boss) ----- */
+states.g22guide = {
+  enter(){ buttons=[]; addButton('XUNG PHONG ▶', W/2-150,H-118,300,56, ()=>game.set('p2_2')); },
+  action(){ if(!hitButtons()) game.set('p2_2'); },
+  confirm(){ game.set('p2_2'); },
+  draw(){
+    greyBattleBg(); drawBattlefieldDecor();
+    drawGuide('Boss — ĐÁNH LỖ CHÂU MAI', [
+      'Di chuyển TỰ DO mọi hướng — máy tính: ← → ↑ ↓ / WASD; điện thoại: chạm & kéo (joystick ảo). Súng tự bắn lên.',
+      'Phá 2 ụ lỗ châu mai (mỗi ụ có thanh máu riêng); né các chiêu của boss.',
+      'Còn 1 ụ: địch ra chiêu nhanh hơn, cài mìn dưới đất và bật khiên khi sắp chết.',
+      'Số mạng ❤ mang theo từ giai đoạn trước — giữ mạng để trụ lâu!'
+    ]);
+    drawButtons();
   }
 };
 
@@ -1089,6 +1164,7 @@ states.p2_2 = {
     p2HudLives();
     if(P2.msgT>0){ ctx.fillStyle='rgba(240,192,64,'+Math.min(1,P2.msgT)+')';
       ctx.font='bold 26px Segoe UI'; ctx.textAlign='center'; ctx.fillText(P2.msg, W/2, 80); }
+    drawJoystick();   // joystick ảo (điện thoại)
   },
   action(){}, confirm(){}
 };
@@ -1222,8 +1298,15 @@ states.result = {
     ctx.font='34px Segoe UI'; ctx.fillText(stars, W/2, 390);
     ctx.fillStyle='#fff'; ctx.font='26px Segoe UI';
     ctx.fillText('Tổng điểm: '+Score.total, W/2, 460);
-    ctx.fillStyle='#cdd6e0'; ctx.font='16px Segoe UI';
-    ctx.fillText('Ngưỡng: S ≥ 10000 · A ≥ 7000 · B ≥ 4500', W/2, 510);
+    if(lbSaved){   // đã nhập tên & lưu xong → thông báo
+      ctx.fillStyle='#7CFC60'; ctx.font='bold 19px Segoe UI';
+      ctx.fillText('✓ Đã lưu "'+lbSaved.name+'" vào bảng xếp hạng', W/2, 502);
+      ctx.fillStyle='#cdd6e0'; ctx.font='15px Segoe UI';
+      ctx.fillText('Điểm ghi nhận: '+lbSaved.score, W/2, 528);
+    } else {
+      ctx.fillStyle='#cdd6e0'; ctx.font='16px Segoe UI';
+      ctx.fillText('Ngưỡng: S ≥ 10000 · A ≥ 7000 · B ≥ 4500', W/2, 510);
+    }
     drawButtons();
   }
 };
