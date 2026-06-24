@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bảng xếp hạng — Bản hùng ca Điện Biên</title>
+<style>
+  :root{ --bg1:#0c1622; --gold:#f0c040; --red:#c0392b; --card:rgba(0,0,0,.45);
+    --line:rgba(240,192,64,.25); --txt:#e8eef4; --mut:#9fb0bf; }
+  *{box-sizing:border-box;}
+  html,body{margin:0;min-height:100%;}
+  body{font-family:"Segoe UI",system-ui,-apple-system,sans-serif;color:var(--txt);
+    background:radial-gradient(120% 80% at 50% 0%,#23323f 0%,var(--bg1) 60%,#070d14 100%);
+    padding:24px 14px 60px;display:flex;flex-direction:column;align-items:center;}
+  .wrap{width:100%;max-width:720px;}
+  h1{font-size:30px;text-align:center;margin:4px 0 2px;color:var(--gold);letter-spacing:.5px;text-shadow:0 2px 0 rgba(0,0,0,.5);}
+  .sub{text-align:center;color:var(--mut);font-size:14px;margin-bottom:8px;}
+  .status{text-align:center;color:var(--mut);font-size:12px;margin-bottom:16px;min-height:16px;}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+  th,td{padding:12px 10px;text-align:left;font-size:16px;}
+  th{background:rgba(240,192,64,.12);color:var(--gold);font-weight:600;text-transform:uppercase;font-size:12px;letter-spacing:.6px;}
+  tr+tr td{border-top:1px solid rgba(255,255,255,.06);}
+  td.pos{width:56px;text-align:center;font-weight:700;font-size:18px;}
+  td.score{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold);}
+  td.date{color:var(--mut);font-size:12px;white-space:nowrap;}
+  .badge{display:inline-block;min-width:26px;text-align:center;padding:2px 8px;border-radius:6px;font-weight:700;font-size:13px;color:#0c1622;}
+  .S{background:#f0c040;} .A{background:#cfd8dc;} .B{background:#c8895a;} .C{background:#7f8c8d;color:#fff;}
+  .top1 td{background:rgba(240,192,64,.10);}
+  .medal{font-size:22px;}
+  .empty{text-align:center;color:var(--mut);padding:50px 20px;background:var(--card);border:1px dashed var(--line);border-radius:14px;font-size:16px;line-height:1.7;}
+  .bar{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:22px;}
+  button,a.btn{font:inherit;font-size:16px;font-weight:600;cursor:pointer;padding:11px 22px;border-radius:10px;
+    border:2px solid var(--gold);background:#8b2318;color:#fff;text-decoration:none;transition:.15s;}
+  button:hover,a.btn:hover{background:var(--red);transform:translateY(-1px);}
+  button.ghost{background:transparent;border-color:rgba(255,255,255,.25);color:var(--mut);}
+  button.ghost:hover{background:rgba(255,255,255,.06);color:#fff;}
+  @media (max-width:520px){ h1{font-size:23px;} th,td{padding:9px 7px;font-size:14px;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>★ Bảng xếp hạng</h1>
+  <div class="sub">Bản hùng ca Điện Biên — xếp theo tổng điểm</div>
+  <div class="status" id="status"></div>
+  <div id="content"></div>
+  <div class="bar">
+    <button id="refresh">⟳ Làm mới</button>
+    <a class="btn" href="index.html">▶ Vào game</a>
+  </div>
+</div>
+
+<script>
+/* ====== Bảng xếp hạng đọc từ /api/scores (Vercel + MongoDB Atlas) ====== */
+const LB_API = '/api/scores';
+const LB_LOCAL_KEY = 'dbp_leaderboard';
+const LB_IS_LOCAL = (location.protocol === 'file:');
+const AUTO_REFRESH_MS = 10000;      // tự cập nhật mỗi 10s (cho máy chiếu)
+const medals = ['🥇','🥈','🥉'];
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtDate(ts){ if(!ts) return ''; try{ return new Date(ts).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+
+async function fetchScores(){
+  if(LB_IS_LOCAL){
+    let lb=[]; try{ lb=JSON.parse(localStorage.getItem(LB_LOCAL_KEY)||'[]'); }catch(e){}
+    return lb.map(d=>({ name:d.name, score:d.score, rank:d.rank, date:d.createdAt||d.date }));
+  }
+  const r = await fetch(LB_API, { headers:{ 'Accept':'application/json' } });
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const data = await r.json();
+  return data.map(d=>({ name:d.name, score:d.score, rank:d.rank, date:d.createdAt }));
+}
+
+function renderRows(lb){
+  const el=document.getElementById('content');
+  if(!lb.length){ el.innerHTML='<div class="empty">Chưa có ai trên bảng xếp hạng.<br>Hãy chơi một ván và lập kỷ lục đầu tiên!</div>'; return; }
+  lb.sort((a,b)=> b.score-a.score);
+  const rows = lb.slice(0,100).map((e,i)=>{
+    const pos = i<3 ? '<span class="medal">'+medals[i]+'</span>' : (i+1);
+    const r = (e.rank||'C');
+    return `<tr class="${i===0?'top1':''}">
+      <td class="pos">${pos}</td>
+      <td>${esc(e.name||'Ẩn danh')}</td>
+      <td><span class="badge ${r}">${r}</span></td>
+      <td class="score">${(e.score||0).toLocaleString('vi-VN')}</td>
+      <td class="date">${fmtDate(e.date)}</td></tr>`;
+  }).join('');
+  el.innerHTML = `<table><thead><tr><th>#</th><th>Tên</th><th>Hạng</th><th>Điểm</th><th>Thời gian</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function refresh(){
+  const st=document.getElementById('status');
+  try{
+    const lb = await fetchScores();
+    renderRows(lb);
+    const mode = LB_IS_LOCAL ? 'localStorage (mở trực tiếp file)' : 'database chung (MongoDB Atlas)';
+    st.textContent = 'Cập nhật lúc ' + new Date().toLocaleTimeString('vi-VN') + ' · ' + mode + ' · tự làm mới mỗi ' + (AUTO_REFRESH_MS/1000) + 's';
+  }catch(e){
+    st.textContent = 'Lỗi tải bảng xếp hạng: ' + e.message;
+  }
+}
+
+document.getElementById('refresh').addEventListener('click', refresh);
+refresh();
+setInterval(refresh, AUTO_REFRESH_MS);
+</script>
+</body>
+</html>

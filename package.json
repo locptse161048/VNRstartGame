@@ -1,0 +1,9 @@
+{
+  "name": "ban-hung-ca-dien-bien",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Game Bản hùng ca Điện Biên + bảng xếp hạng (Vercel + MongoDB Atlas)",
+  "dependencies": {
+    "mongodb": "^6.8.0"
+  }
+}
