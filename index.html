@@ -148,7 +148,7 @@ function ptFromEvent(e){
 }
 function onDown(e){ const p=ptFromEvent(e); if(!p)return; pointer.x=p.x;pointer.y=p.y;
   pointer.down=true;pointer.active=true;pointer.justTapped=true;
-  joy.active=true; joy.ox=p.x; joy.oy=p.y; joy.kx=p.x; joy.ky=p.y;   // neo joystick tại điểm chạm
+  if(e.touches){ joy.active=true; joy.ox=p.x; joy.oy=p.y; joy.kx=p.x; joy.ky=p.y; }  // joystick CHỈ cho cảm ứng (chuột thì không)
   game.onAction(); e.preventDefault(); }
 function onMove(e){ const p=ptFromEvent(e); if(!p)return; pointer.x=p.x;pointer.y=p.y;
   if(joy.active){ joy.kx=p.x; joy.ky=p.y; } e.preventDefault(); }
@@ -476,9 +476,11 @@ const P1 = {
   },
   setupAttempt(a){                  // độ khó tăng theo từng lượt — thanh trượt nhanh dần
     this.speed = 0.9 + a*0.18;
+    if(a===4) this.speed = 2.6;     // lượt 4: tốc độ 2.6
     this.perfectHalf = Math.max(0.035, 0.11 - a*0.014);  // ô vàng nhỏ dần mỗi lượt
-    if(a===this.maxAttempt){        // lượt cuối: nhanh hơn + ô nhỏ nhất + hiện CHÚ Ý
-      this.speed += 0.35; this.perfectHalf = Math.max(0.03, this.perfectHalf-0.012); this.warnT = 2.2;
+    if(a===4) this.perfectHalf = 0.04;   // lượt 4: ô vàng nhỏ hơn
+    if(a===this.maxAttempt){        // lượt cuối (5): tốc độ 3.0 + ô nhỏ nhất + hiện CHÚ Ý
+      this.speed = 3.0; this.perfectHalf = Math.max(0.03, this.perfectHalf-0.012); this.warnT = 2.2;
     }
     this.zonePos = rand(-0.6, 0.6); // ô mục tiêu ở vị trí ngẫu nhiên mỗi lượt
   }
@@ -704,9 +706,13 @@ function p2MovePlayer(dt, freeY){
   if(keys['ArrowRight']||keys['KeyD']) p.x+=sp;
   if(freeY){ if(keys['ArrowUp']||keys['KeyW']) p.y-=sp; if(keys['ArrowDown']||keys['KeyS']) p.y+=sp; }
   if(freeY){
-    // JOYSTICK ảo: di chuyển theo HƯỚNG cần (mọi hướng) — dành cho điện thoại
-    if(joy.active){ let dx=joy.kx-joy.ox, dy=joy.ky-joy.oy; const m=Math.hypot(dx,dy);
-      if(m>6){ const cl=Math.min(m,joy.R)/joy.R; p.x += dx/m*cl*sp; p.y += dy/m*cl*sp; } }
+    if(joy.active){   // JOYSTICK ảo (cảm ứng): di chuyển theo HƯỚNG cần
+      let dx=joy.kx-joy.ox, dy=joy.ky-joy.oy; const m=Math.hypot(dx,dy);
+      if(m>6){ const cl=Math.min(m,joy.R)/joy.R; p.x += dx/m*cl*sp; p.y += dy/m*cl*sp; }
+    } else if(pointer.down){   // CHUỘT (máy tính): di chuyển nhân vật theo con trỏ
+      p.x += clamp(pointer.x-p.x,-sp*1.6,sp*1.6);
+      p.y += clamp(pointer.y-p.y,-sp*1.6,sp*1.6);
+    }
   } else if(pointer.down){
     p.x += clamp(pointer.x-p.x,-sp*1.6,sp*1.6);   // GĐ2.1: kéo ngang như cũ
   }
@@ -1000,8 +1006,8 @@ states.p2_2 = {
     game.bossEntryLives = game.lives;
     P2.player.y=H-160; P2.player.invuln=1; P2.bullets=[];P2.ebullets=[];P2.craters=[];P2.warnings=[];P2.plane=null;P2.mines=[];P2.sacAnim=null;
     P2.boss = {
-      holes:[ {x:130,y:130,hp:42,max:42,dead:false,sacrificed:false},
-              {x:W-130,y:130,hp:42,max:42,dead:false,sacrificed:false} ],
+      holes:[ {x:130,y:130,hp:52,max:52,dead:false,sacrificed:false},
+              {x:W-130,y:130,hp:52,max:52,dead:false,sacrificed:false} ],
       atk:0, atkT:1.6, phase:'idle', seq:0
     };
     P2.sacrificeDone=false; P2.msg='HẠ LỖ CHÂU MAI!'; P2.msgT=1.6;
@@ -1102,20 +1108,16 @@ states.p2_2 = {
       for(const h of holes){ for(let i=0;i<5;i++){ setTimeout(()=>{
         if(h.dead)return; const ang=Math.atan2(p.y-h.y,p.x-h.x);
         P2.ebullets.push({x:h.x,y:h.y,vx:Math.cos(ang)*260,vy:Math.sin(ang)*260,life:4}); }, i*120); } }
-      P2.msg='Chiêu 1: Bắn nhắm thẳng'; P2.msgT=1.0;
     } else if(n===2){ // quạt đạn nảy tường
       for(const h of holes){ const base=Math.atan2(p.y-h.y,p.x-h.x);
         for(let i=-2;i<=2;i++){ const a=base+i*0.32;
           P2.ebullets.push({x:h.x,y:h.y,vx:Math.cos(a)*220,vy:Math.sin(a)*220,bounce:0,life:6}); } }
-      P2.msg='Chiêu 2: Quạt đạn nảy tường'; P2.msgT=1.0;
     } else if(n===3){ // gọi máy bay
       const dir = Math.random()<0.5?1:-1;
       P2.plane={x:dir>0?-120:W+120,vx:dir*220,dropT:0.9,dropped:false,
         spots:[{x:rand(80,W-80),y:rand(300,H-200)},{x:rand(80,W-80),y:rand(300,H-200)},{x:p.x,y:p.y}]};
-      P2.msg='Chiêu 3: Máy bay ném bom!'; P2.msgT=1.0;
     } else { // n===4: CÀI MÌN trên mặt đất (chỉ khi còn 1 ụ)
       for(let i=0;i<6;i++) P2.mines.push({x:rand(50,W-50), y:rand(240,H-90), armT:0.7, life:7});
-      P2.msg='Chiêu 4: Cài mìn!'; P2.msgT=1.2;
     }
   },
   draw(){
